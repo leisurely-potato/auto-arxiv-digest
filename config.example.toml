@@ -1,0 +1,44 @@
+[app]
+database_path = "data/auto_paper.sqlite3"
+report_dir = "reports"
+log_path = "logs/auto-paper.log"
+
+[arxiv]
+base_url = "https://export.arxiv.org/api/query"
+
+[llm]
+enabled = false
+provider = "openai_compatible"
+base_url = "https://api.deepseek.com/chat/completions"
+api_key_env = "DEEPSEEK_API_KEY"
+model = "deepseek-v4-flash"
+prompt_path = "prompts/summary.zh.md"
+max_papers_per_run = 20
+max_tokens = 2000
+
+[zotero]
+enabled = false
+api_key_env = "ZOTERO_API_KEY"
+library_type = "user"
+library_id = "YOUR_LIBRARY_ID"
+
+[[topics]]
+name = "LLM Agents"
+query = "cat:cs.AI AND (agent OR agents OR planning)"
+max_results = 20
+sort_by = "submittedDate"
+sort_order = "descending"
+tags = ["llm-agent", "planning"]
+zotero_collection_id = "YOUR_COLLECTION_ID"
+zotero_tags = ["LLM Agents"]
+
+[[topics]]
+name = "Retrieval Augmented Generation"
+query = "cat:cs.CL AND (retrieval OR RAG OR indexing)"
+max_results = 20
+sort_by = "submittedDate"
+sort_order = "descending"
+tags = ["rag", "retrieval"]
+zotero_collection_id = "YOUR_COLLECTION_ID"
+zotero_tags = ["RAG"]
+# prompt_path = "prompts/rag.zh.md"
