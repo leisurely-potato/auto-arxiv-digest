@@ -7,7 +7,8 @@
 ```bash
 uv venv
 cp config.example.toml config.toml
-uv run auto-paper --config config.toml daily --date 2026-05-28
+set -a; source .env; set +a  # 如果启用 LLM 或 Zotero
+uv run auto-paper --config config.toml daily --date 2026-05-29
 ```
 
 日报默认写入 `reports/YYYY-MM-DD.md`，数据库默认写入 `data/auto_paper.sqlite3`，运行日志默认写入 `logs/auto-paper.log`。
@@ -17,6 +18,7 @@ uv run auto-paper --config config.toml daily --date 2026-05-28
 核心配置在 `config.toml`：
 
 - `[[topics]]`：每个主题包含 arXiv 查询语句、标签和 Zotero collection。
+- `[arxiv]`：控制 arXiv API 地址、请求间隔和重试。
 - `[llm]`：控制是否启用摘要、模型、API 地址和 prompt。
 - `[zotero]`：控制 Zotero library 和 API key 环境变量名。
 
@@ -26,6 +28,60 @@ LLM 和 Zotero 默认关闭。示例配置使用 DeepSeek 的 OpenAI-compatible 
 DEEPSEEK_API_KEY=...
 ZOTERO_API_KEY=...
 ```
+
+启用 DeepSeek 摘要时：
+
+```toml
+[llm]
+enabled = true
+provider = "openai_compatible"
+base_url = "https://api.deepseek.com/chat/completions"
+api_key_env = "DEEPSEEK_API_KEY"
+model = "deepseek-v4-flash"
+prompt_path = "prompts/summary.zh.md"
+max_papers_per_run = 20
+max_tokens = 2000
+retries = 2
+retry_delay = 1.0
+```
+
+边缘计算、边缘缓存、边缘智能方向可以这样配置：
+
+```toml
+[[topics]]
+name = "Edge Computing"
+query = "(cat:cs.NI OR cat:cs.DC) AND (all:\"edge computing\" OR all:\"mobile edge computing\" OR all:MEC)"
+max_results = 20
+tags = ["edge-computing", "mec"]
+
+[[topics]]
+name = "Edge Caching"
+query = "(cat:cs.NI OR cat:cs.DC) AND (all:\"edge caching\" OR all:\"cache placement\" OR all:\"content caching\" OR all:\"coded caching\")"
+max_results = 20
+tags = ["edge-caching", "cache-placement"]
+
+[[topics]]
+name = "Edge Intelligence"
+query = "(cat:cs.AI OR cat:cs.LG OR cat:cs.NI) AND (all:\"edge intelligence\" OR all:\"edge AI\" OR all:\"federated learning\" OR all:\"on-device learning\")"
+max_results = 20
+tags = ["edge-intelligence", "edge-ai", "federated-learning"]
+```
+
+## arXiv API 限速
+
+项目使用 arXiv legacy API：`https://export.arxiv.org/api/query`。arXiv 官方要求所有由你控制的机器合计不要超过 1 次请求 / 3 秒，并且一次只保持一个连接。
+
+默认配置会在同一个进程内串行化请求，并保证相邻 arXiv 请求至少间隔 3 秒：
+
+```toml
+[arxiv]
+base_url = "https://export.arxiv.org/api/query"
+rate_limit_seconds = 3.0
+retries = 3
+retry_delay = 3.0
+```
+
+如果在多台机器或多个 cron 任务中运行，需要在调度层避免重叠执行。
 
 ## 自定义 Prompt
 
@@ -95,5 +151,5 @@ AUTO_PAPER_CRON="0 8 * * *" scripts/install_cron.sh
 ## 测试
 
 ```bash
-uv run pytest
+uv run --extra dev pytest
 ```

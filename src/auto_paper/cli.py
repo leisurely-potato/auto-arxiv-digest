@@ -54,7 +54,13 @@ def run_daily(
     db.upsert_topics(config.topics)
     run_id = db.start_run(run_date)
     try:
-        client = ArxivClient(config.arxiv_base_url)
+        client = ArxivClient(
+            config.arxiv_base_url,
+            timeout=int(config.arxiv.get("timeout", 30)),
+            rate_limit_seconds=float(config.arxiv.get("rate_limit_seconds", 3.0)),
+            retries=int(config.arxiv.get("retries", 3)),
+            retry_delay=float(config.arxiv.get("retry_delay", 3.0)),
+        )
         all_papers = []
         for topic in config.topics:
             all_papers.extend(client.search(topic))

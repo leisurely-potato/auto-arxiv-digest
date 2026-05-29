@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from json import JSONDecodeError
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -14,6 +16,8 @@ class LLMClient:
         self.model = config.get("model", "gpt-4.1-mini")
         self.timeout = int(config.get("timeout", 60))
         self.max_tokens = int(config.get("max_tokens", 2000))
+        self.retries = int(config.get("retries", 2))
+        self.retry_delay = float(config.get("retry_delay", 1.0))
 
     def summarize(self, prompt: str) -> dict:
         api_key = os.environ.get(self.api_key_env)
@@ -35,10 +39,19 @@ class LLMClient:
             },
             method="POST",
         )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError) as exc:
-            raise RuntimeError(f"LLM request failed: {exc}") from exc
-        content = data["choices"][0]["message"]["content"]
-        return json.loads(content)
+        last_error: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                with urlopen(request, timeout=self.timeout) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                content = data["choices"][0]["message"].get("content") or ""
+                if not content.strip():
+                    raise RuntimeError("LLM returned empty content")
+                return json.loads(content)
+            except (HTTPError, URLError) as exc:
+                last_error = RuntimeError(f"LLM request failed: {exc}")
+            except (KeyError, IndexError, JSONDecodeError, RuntimeError) as exc:
+                last_error = exc
+            if attempt < self.retries:
+                time.sleep(self.retry_delay)
+        raise RuntimeError(f"LLM summary failed after {self.retries + 1} attempts: {last_error}")

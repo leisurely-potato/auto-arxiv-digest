@@ -39,6 +39,7 @@ def load_config(path: str | Path) -> AppConfig:
         log_path=app.get("log_path", "logs/auto-paper.log"),
         topics=topics,
         arxiv_base_url=arxiv.get("base_url", "https://export.arxiv.org/api/query"),
+        arxiv=arxiv,
         llm=llm,
         zotero=zotero,
     )

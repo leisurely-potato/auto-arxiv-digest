@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+import threading
+import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 import xml.etree.ElementTree as ET
@@ -12,9 +15,22 @@ ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 
 
 class ArxivClient:
-    def __init__(self, base_url: str = "https://export.arxiv.org/api/query", timeout: int = 30):
+    _request_lock = threading.Lock()
+    _last_request_at = 0.0
+
+    def __init__(
+        self,
+        base_url: str = "https://export.arxiv.org/api/query",
+        timeout: int = 30,
+        rate_limit_seconds: float = 3.0,
+        retries: int = 3,
+        retry_delay: float = 3.0,
+    ):
         self.base_url = base_url
         self.timeout = timeout
+        self.rate_limit_seconds = rate_limit_seconds
+        self.retries = retries
+        self.retry_delay = retry_delay
 
     def search(self, topic: Topic) -> list[Paper]:
         params = {
@@ -25,12 +41,50 @@ class ArxivClient:
             "sortOrder": topic.sort_order,
         }
         url = f"{self.base_url}?{urlencode(params)}"
-        with urlopen(url, timeout=self.timeout) as response:
-            payload = response.read()
+        payload = self._fetch(url)
         papers = parse_arxiv_feed(payload)
         for paper in papers:
             attach_topic(paper, topic)
         return papers
+
+    def _fetch(self, url: str) -> bytes:
+        last_error: Exception | None = None
+        for attempt in range(self.retries + 1):
+            with self._request_lock:
+                self._wait_for_rate_limit()
+                try:
+                    with urlopen(url, timeout=self.timeout) as response:
+                        payload = response.read()
+                    type(self)._last_request_at = time.monotonic()
+                    return payload
+                except HTTPError as exc:
+                    type(self)._last_request_at = time.monotonic()
+                    last_error = exc
+                    if exc.code != 429 and exc.code < 500:
+                        raise
+                    delay = max(self._retry_after(exc), self.retry_delay * (attempt + 1))
+                except URLError as exc:
+                    type(self)._last_request_at = time.monotonic()
+                    last_error = exc
+                    delay = self.retry_delay * (attempt + 1)
+            if attempt < self.retries:
+                time.sleep(delay)
+        raise RuntimeError(f"arXiv request failed after {self.retries + 1} attempts: {last_error}")
+
+    def _wait_for_rate_limit(self) -> None:
+        elapsed = time.monotonic() - type(self)._last_request_at
+        wait = self.rate_limit_seconds - elapsed
+        if wait > 0:
+            time.sleep(wait)
+
+    def _retry_after(self, exc: HTTPError) -> float:
+        value = exc.headers.get("Retry-After") if exc.headers else None
+        if not value:
+            return 0.0
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
 
 
 def parse_arxiv_feed(payload: bytes | str) -> list[Paper]:

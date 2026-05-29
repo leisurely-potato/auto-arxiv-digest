@@ -36,3 +36,39 @@ def test_summarizer_applies_summary(tmp_path):
     summarizer.summarize([paper], {"Agents": Topic(name="Agents", query="x")})
     assert paper.summary == "中文摘要"
     assert paper.keywords == ["关键词"]
+
+
+def test_llm_client_retries_empty_content(monkeypatch):
+    from io import BytesIO
+
+    from auto_paper.llm_client import LLMClient
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return BytesIO(self.payload)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    calls = iter(
+        [
+            b'{"choices":[{"message":{"content":""}}]}',
+            b'{"choices":[{"message":{"content":"{\\"summary\\":\\"ok\\"}"}}]}',
+        ]
+    )
+    monkeypatch.setenv("TEST_LLM_KEY", "key")
+    monkeypatch.setattr("auto_paper.llm_client.time.sleep", lambda _: None)
+    monkeypatch.setattr("auto_paper.llm_client.urlopen", lambda *_, **__: Response(next(calls)))
+
+    client = LLMClient(
+        {
+            "enabled": True,
+            "api_key_env": "TEST_LLM_KEY",
+            "retries": 1,
+        }
+    )
+
+    assert client.summarize("json please") == {"summary": "ok"}

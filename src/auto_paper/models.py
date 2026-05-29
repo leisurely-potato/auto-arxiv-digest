@@ -52,5 +52,6 @@ class AppConfig:
     log_path: str
     topics: list[Topic]
     arxiv_base_url: str
+    arxiv: dict
     llm: dict
     zotero: dict
